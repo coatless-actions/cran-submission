@@ -13,7 +13,7 @@ name: Submit to CRAN
 on:
   workflow_dispatch: {}   # Allow manual triggering
   release:
-    types: [prerelease]   # Or trigger on publish
+    types: [prereleased]   # Or trigger on publish
 
 jobs:
   cran-submission:
