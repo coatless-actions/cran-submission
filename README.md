@@ -3,6 +3,8 @@
 This GitHub Action automates the process of checking and submitting R packages to CRAN (The Comprehensive R Archive Network). 
 It performs all necessary checks to ensure your package complies with CRAN policies and then submits it, creating an issue to track the submission status.
 
+You can see a demo of this action in action [here][submit-cran-demo]. 
+
 ## Usage
 
 Add this to your repository's workflow:
@@ -36,26 +38,29 @@ jobs:
 
 ## Inputs
 
-| Name | Description | Required | Default |
-|------|-------------|----------|---------|
-| `pkg-directory` | Directory containing the R package | No | `.` |
-| `check-directory` | Directory for check outputs | No | `check` |
-| `error-on` | Stop on warnings or errors ("warning" or "error") | No | `warning` |
-| `upload-snapshots` | Whether to upload snapshots of failing tests | No | `true` |
-| `create-issue` | Create a GitHub issue for the submission | No | `true` |
-| `r-version` | R version to use | No | `release` |
+| Name               | Description                                       | Required | Default   |
+|--------------------|---------------------------------------------------|----------|-----------|
+| `pkg-directory`    | Directory containing the R package                | No       | `.`       |
+| `check-directory`  | Directory for check outputs                       | No       | `check`   |
+| `error-on`         | Stop on warnings or errors ("warning" or "error") | No       | `warning` |
+| `upload-snapshots` | Whether to upload snapshots of failing tests      | No       | `true`    |
+| `create-issue`     | Create a GitHub issue for the submission          | No       | `true`    |
+| `r-version`        | R version to use                                  | No       | `release` |
+
 
 ## Outputs
 
-| Name | Description |
-|------|-------------|
-| `pkg-name` | Package name |
-| `pkg-version` | Package version |
-| `maintainer-name` | Maintainer name |
-| `maintainer-email` | Maintainer email |
+| Name                | Description                           |
+|---------------------|---------------------------------------|
+| `pkg-name`          | Package name                          |
+| `pkg-version`       | Package version                       |
+| `maintainer-name`   | Maintainer name                       |
+| `maintainer-email`  | Maintainer email                      |
 | `submission-status` | Submission status (success or failed) |
-| `tarball-path` | Path to the package tarball |
+| `tarball-path`      | Path to the package tarball           |
 
 ## License
 
 [MIT](LICENSE)
+
+[submit-cran-demo]: https://github.com/coatless-r-n-d/submit-cran-gh-action-check
