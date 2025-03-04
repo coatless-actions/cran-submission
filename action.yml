@@ -1,0 +1,277 @@
+name: 'R Package CRAN Submission'
+description: 'Checks and submits R packages to CRAN'
+author: 'coatless-actions'
+
+inputs:
+  pkg-directory:
+    description: 'Directory containing the R package'
+    required: false
+    default: '.'
+  check-directory:
+    description: 'Directory for check outputs'
+    required: false
+    default: 'check'
+  error-on:
+    description: 'Stop on warnings or errors ("warning" or "error")'
+    required: false
+    default: 'warning'
+  upload-snapshots:
+    description: 'Whether to upload snapshots of failing tests'
+    required: false
+    default: 'true'
+  create-issue:
+    description: 'Create a GitHub issue for the submission'
+    required: false
+    default: 'true'
+  r-version:
+    description: 'R version to use'
+    required: false
+    default: 'release'
+
+outputs:
+  pkg-name:
+    description: 'Package name'
+    value: ${{ steps.pkg-info.outputs.pkg_name }}
+  pkg-version:
+    description: 'Package version'
+    value: ${{ steps.pkg-info.outputs.pkg_version }}
+  maintainer-name:
+    description: 'Maintainer name'
+    value: ${{ steps.pkg-info.outputs.maintainer_name }}
+  maintainer-email:
+    description: 'Maintainer email'
+    value: ${{ steps.pkg-info.outputs.maintainer_email }}
+  submission-status:
+    description: 'Submission status (success or failed)'
+    value: ${{ steps.cran-submit.outputs.submission_status }}
+  tarball-path:
+    description: 'Path to the package tarball'
+    value: ${{ steps.locate-tarball.outputs.tarball_path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up R
+      uses: r-lib/actions/setup-r@v2
+      with:
+        r-version: ${{ inputs.r-version }}
+
+    - name: Install dependencies
+      uses: r-lib/actions/setup-r-dependencies@v2
+      with:
+        extra-packages: any::rcmdcheck, any::desc, any::httr
+        needs: check
+        working-directory: ${{ inputs.pkg-directory }}
+
+    - name: Check package
+      uses: r-lib/actions/check-r-package@v2
+      id: check-r-pkg
+      with:
+        upload-snapshots: ${{ inputs.upload-snapshots }}
+        check-dir: ${{ inputs.check-directory }}
+        error-on: ${{ inputs.error-on }}
+        working-directory: ${{ inputs.pkg-directory }}
+
+    - name: Extract package information
+      id: pkg-info
+      shell: Rscript {0}
+      working-directory: ${{ inputs.pkg-directory }}
+      run: |
+        # Read the DESCRIPTION file
+        d <- desc::desc()
+
+        # Extract package name, version and maintainer
+        pkgname <- d$get("Package")
+        version <- d$get("Version")
+
+        # Get the maintainer field and extract email
+        maintainer <- d$get_maintainer()
+        maintainer_name <- sub("\\s*<.*>", "", maintainer)
+
+        # Extract the email using desc's built-in function
+        maintainer_email <- if(length(maintainer) == 1) {
+          email_match <- regexpr("<[^>]+>|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", maintainer)
+          if(email_match > 0) {
+            email <- regmatches(maintainer, email_match)
+            gsub("[<>]", "", email)
+          } else {
+            stop("Could not extract maintainer email from DESCRIPTION")
+          }
+        } else {
+          stop("Multiple maintainers are listed in DESCRIPTION; unable to extract.")
+        }
+
+        # Write to environment for later steps
+        cat("pkg_name=", pkgname, "\n", sep="", file = Sys.getenv("GITHUB_OUTPUT"), append = TRUE)
+        cat("pkg_version=", version, "\n", sep="", file = Sys.getenv("GITHUB_OUTPUT"), append = TRUE) 
+        cat("maintainer_name=", maintainer_name, "\n", sep="", file = Sys.getenv("GITHUB_OUTPUT"), append = TRUE)
+        cat("maintainer_email=", maintainer_email, "\n", sep="", file = Sys.getenv("GITHUB_OUTPUT"), append = TRUE)
+
+        # For environment variables
+        cat(sprintf("PKGNAME=%s\n", pkgname), file = Sys.getenv("GITHUB_ENV"), append = TRUE)
+        cat(sprintf("VERSION=%s\n", version), file = Sys.getenv("GITHUB_ENV"), append = TRUE)
+        cat(sprintf("MAINTAINER_NAME=%s\n", maintainer_name), file = Sys.getenv("GITHUB_ENV"), append = TRUE)
+        cat(sprintf("MAINTAINER_EMAIL=%s\n", maintainer_email), file = Sys.getenv("GITHUB_ENV"), append = TRUE)
+        cat(sprintf("pkg_file=%s_%s.tar.gz\n", pkgname, version), file = Sys.getenv("GITHUB_ENV"), append = TRUE)
+
+    - name: Locate package tarball
+      id: locate-tarball
+      shell: bash
+      run: |
+        # The package tarball from r-lib/actions/check-r-package@v2
+        cd ${{ inputs.pkg-directory }}
+        
+        # Try to find the tarball
+        PKG_TARBALL=$(find "${{ inputs.check-directory }}" -name "${PKGNAME}_${VERSION}.tar.gz" -print -quit)
+
+        # If not found in check_dir, check the parent directory
+        if [ -z "$PKG_TARBALL" ]; then
+          PKG_TARBALL=$(find . -maxdepth 2 -name "${PKGNAME}_${VERSION}.tar.gz" -print -quit)
+        fi
+
+        if [ -z "$PKG_TARBALL" ]; then
+          echo "Could not find package tarball"
+          echo "Check directory contents:"
+          find "${{ inputs.check-directory }}" -type f | sort
+          exit 1
+        fi
+
+        echo "Found package tarball: $PKG_TARBALL"
+        echo "PKG_TARBALL=$PKG_TARBALL" >> $GITHUB_ENV
+        echo "tarball_path=$PKG_TARBALL" >> $GITHUB_OUTPUT
+
+        # Copy to a predictable location
+        mkdir -p artifacts
+        cp "$PKG_TARBALL" "artifacts/${PKGNAME}_${VERSION}.tar.gz"
+        echo "SUBMISSION_PKG=artifacts/${PKGNAME}_${VERSION}.tar.gz" >> $GITHUB_ENV
+
+    - name: Check for cran-comments.md
+      id: check-comments
+      shell: bash
+      run: |
+        cd ${{ inputs.pkg-directory }}
+        if [ -f "cran-comments.md" ]; then
+          echo "HAS_COMMENTS=true" >> $GITHUB_ENV
+        else
+          echo "HAS_COMMENTS=false" >> $GITHUB_ENV
+          echo "cran-comments.md not found, will create a basic one"
+        fi
+
+    - name: Create default cran-comments if none exists
+      if: env.HAS_COMMENTS == 'false'
+      shell: bash
+      run: |
+        cd ${{ inputs.pkg-directory }}
+        cat << EOF > cran-comments.md
+        * This submission was automatically generated by the R Package CRAN Submission GitHub Action.
+        EOF
+        echo "Created default cran-comments.md"
+
+    - name: Submit to CRAN
+      id: cran-submit
+      shell: bash
+      run: |
+        cd ${{ inputs.pkg-directory }}
+        # Get package file path
+        PKG_FILE="${SUBMISSION_PKG}"
+
+        if [ ! -f "${PKG_FILE}" ]; then
+          echo "Error: Package file not found: ${PKG_FILE}"
+          echo "submission_status=failed" >> $GITHUB_OUTPUT
+          echo "submission_reason=missing_file" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        # Last line of defense to prevent a problematic submission
+        # Check if package passes with no warnings or errors
+        CHECK_LOG="${{ inputs.check-directory }}/*.Rcheck/00check.log"
+        if [ -f "${CHECK_LOG}" ]; then
+          STATUS_LINE=$(grep "Status: " "${CHECK_LOG}")
+          echo "R CMD check status: ${STATUS_LINE}"
+
+          if [[ "${STATUS_LINE}" == *"ERROR"* ]] || [[ "${STATUS_LINE}" == *"WARNING"* ]]; then
+            echo "Package has errors or warnings. Not submitting to CRAN."
+            echo "submission_status=failed" >> $GITHUB_OUTPUT
+            echo "submission_reason=check_failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+        else
+          echo "Check log not found at ${CHECK_LOG}"
+          echo "Assuming package passed check since this step is running."
+        fi
+
+        echo "Submitting package to CRAN..."
+
+        # Pass all collected metadata to the script to avoid re-reading DESCRIPTION
+        Rscript ${{ github.action_path }}/scripts/submit-to-cran.R \
+          "${PKG_FILE}" \
+          "." \
+          "${PKGNAME}" \
+          "${VERSION}" \
+          "${MAINTAINER_NAME}" \
+          "${MAINTAINER_EMAIL}"
+
+        # Check if the script was successful
+        if [ $? -eq 0 ]; then
+          echo "CRAN submission successful!"
+          echo "submission_status=success" >> $GITHUB_OUTPUT
+        else
+          echo "CRAN submission failed"
+          echo "submission_status=failed" >> $GITHUB_OUTPUT
+          echo "submission_reason=upload_failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+    - name: Create issue content file
+      if: inputs.create-issue == 'true'
+      shell: bash
+      run: |
+        # Obfuscate email for privacy
+        EMAIL="${MAINTAINER_EMAIL}"
+
+        # Extract username and domain
+        USERNAME=$(echo "$EMAIL" | cut -d@ -f1)
+        DOMAIN=$(echo "$EMAIL" | cut -d@ -f2)
+
+        # Get first 2 characters of username and obfuscate the rest
+        if [ ${#USERNAME} -le 3 ]; then
+          # For very short usernames, just show first character
+          VISIBLE_PART="${USERNAME:0:1}"
+        else
+          # For longer usernames, show first 2 characters
+          VISIBLE_PART="${USERNAME:0:2}"
+        fi
+
+        # Create obfuscated version
+        OBFUSCATED_EMAIL="${VISIBLE_PART}****@${DOMAIN}"
+
+        cat << EOF > issue_content.md
+        ## CRAN Submission Status: ${{ steps.cran-submit.outputs.submission_status == 'success' && 'Submitted' || 'Failed' }}
+
+        A CRAN submission for **${{ env.PKGNAME }}** version **${{ env.VERSION }}** has been ${{ steps.cran-submit.outputs.submission_status == 'success' && 'submitted' || 'attempted but failed' }}.
+
+        ### ${{ steps.cran-submit.outputs.submission_status == 'success' && 'Next Steps' || 'Troubleshooting' }}:
+
+        ${{ steps.cran-submit.outputs.submission_status == 'success' && '1. **Check your email**: ' || '- Review the workflow logs: ' }} ${{ steps.cran-submit.outputs.submission_status == 'success' && 'You MUST reply to the confirmation email from CRAN to complete the submission.' || 'Check the GitHub Actions logs for error details.' }}
+        ${{ steps.cran-submit.outputs.submission_status == 'success' && '2. **Verify submission**: Check if your package appears at https://CRAN.R-project.org/incoming/' || '- Verify your package passes R CMD check with no warnings or errors.' }}
+        ${{ steps.cran-submit.outputs.submission_status == 'success' && '3. **If issues occur**: Contact CRAN administrators at cran-sysadmin@R-project.org' || '- Check your DESCRIPTION file and ensure maintainer information is correct.' }}
+
+        ### Submission details:
+        - Package: ${{ env.PKGNAME }}
+        - Version: ${{ env.VERSION }}
+        - Maintainer: ${{ env.MAINTAINER_NAME }}
+        - Email: ${OBFUSCATED_EMAIL}
+        - Submission Date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+        ${{ steps.cran-submit.outputs.submission_status == 'success' && 'Note: You will need to manually handle any feedback from CRAN reviewers.' || 'You can manually submit your package to CRAN once issues are resolved or do a new pre-release.' }}
+        EOF
+
+        echo "Created issue content file with obfuscated email"
+
+    - name: Create GitHub Issue
+      if: inputs.create-issue == 'true'
+      uses: peter-evans/create-issue-from-file@v5
+      with:
+        title: "CRAN Submission: ${{ env.PKGNAME }} ${{ env.VERSION }}"
+        content-filepath: ./issue_content.md
+        labels: "CRAN, submission, ${{ steps.cran-submit.outputs.submission_status == 'success' && 'success' || 'failed' }}"
