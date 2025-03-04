@@ -67,10 +67,10 @@ runs:
       uses: r-lib/actions/check-r-package@v2
       id: check-r-pkg
       with:
-        upload-snapshots: ${{ inputs.upload-snapshots }}
-        check-dir: ${{ inputs.check-directory }}
-        error-on: ${{ inputs.error-on }}
-        working-directory: ${{ inputs.pkg-directory }}
+        upload-snapshots: "${{ inputs.upload-snapshots }}"
+        check-dir: "'${{ inputs.check-directory }}'"
+        error-on: "'${{ inputs.error-on }}'"
+        working-directory: "${{ inputs.pkg-directory }}"
 
     - name: Extract package information
       id: pkg-info
