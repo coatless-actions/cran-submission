@@ -13,9 +13,16 @@ Add this to your repository's workflow:
 name: Submit to CRAN
 
 on:
-  workflow_dispatch: {}   # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type "CONFIRM" to proceed with CRAN submission'
+        required: true
+        default: ''
+        type: string
   release:
-    types: [prereleased]   # Or trigger on publish
+    types: [prereleased]   # Only trigger on pre-releases
+
 
 jobs:
   cran-submission:

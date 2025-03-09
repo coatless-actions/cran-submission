@@ -27,6 +27,10 @@ inputs:
     description: 'R version to use'
     required: false
     default: 'release'
+  confirmation:
+    description: 'Confirmation string to verify intent (e.g., "CONFIRM")'
+    required: false
+    default: ''
 
 outputs:
   pkg-name:
@@ -51,6 +55,75 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Debug confirmation parameters
+      shell: bash
+      run: |
+        echo "=== CRAN Submission Parameters ==="
+        echo "Event type: ${{ github.event_name }}"
+        echo "Action confirmation input: '${{ inputs.confirmation }}'"
+        
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "Workflow dispatch confirmation input: '${{ github.event.inputs.confirmation }}'"
+          if [[ "${{ inputs.confirmation }}" == "CONFIRM" || "${{ github.event.inputs.confirmation }}" == "CONFIRM" ]]; then
+            echo "Confirmation status: CONFIRMED"
+            echo "Source: $([[ "${{ inputs.confirmation }}" == "CONFIRM" ]] && echo "action input" || echo "workflow input")"
+          else
+            echo "Confirmation status: NOT CONFIRMED"
+          fi
+        fi
+        
+        if [[ "${{ github.event_name }}" == "release" ]]; then
+          echo "Is prerelease: ${{ github.event.release.prerelease }}"
+          echo "Is prereleased: ${{ github.event.release.prereleased }}"
+          echo "Release tag: ${{ github.event.release.tag_name }}"
+          echo "Release name: ${{ github.event.release.name }}"
+        fi
+        
+        echo "======================================="
+        
+    - name: Validate submission context
+      shell: bash
+      run: |
+        echo "Validating submission context..."
+        
+        # Determine if this should proceed based on validation rules
+        SHOULD_PROCEED=false
+        
+        # Case 1: Workflow dispatch with CONFIRM
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "${{ inputs.confirmation }}" == "CONFIRM" || "${{ github.event.inputs.confirmation }}" == "CONFIRM" ]]; then
+            SHOULD_PROCEED=true
+            echo "Validation passed: Workflow dispatch with confirmation"
+          else
+            echo "::error::Manual submission requires confirmation to be set to 'CONFIRM'"
+            echo "This safety feature helps prevent accidental submissions to CRAN."
+            exit 1
+          fi
+        # Case 2: Pre-release event
+        elif [[ "${{ github.event_name }}" == "release" ]]; then
+          if [[ "${{ github.event.release.prerelease }}" == "true" ]]; then
+            SHOULD_PROCEED=true
+            echo "Validation passed: Pre-release event"
+          else
+            echo "::error::This action only runs on pre-release events by default."
+            echo "CRAN submissions should be carefully tested before submitting."
+            echo "Mark your release as a pre-release to proceed, or use workflow_dispatch with confirmation."
+            exit 1
+          fi
+        # Case 3: Neither a workflow dispatch nor a release
+        else
+          echo "::error::This action only runs on pre-release events or workflow_dispatch with confirmation."
+          echo "Current event: ${{ github.event_name }}"
+          exit 1
+        fi
+        
+        if [[ "$SHOULD_PROCEED" == "true" ]]; then
+          echo "Validation successful. Proceeding with CRAN submission process."
+        else
+          echo "::error::Unknown validation failure."
+          exit 1
+        fi
+
     - name: Set up R
       uses: r-lib/actions/setup-r@v2
       with:
@@ -203,24 +276,24 @@ runs:
         echo "Submitting package to CRAN..."
 
         # Pass all collected metadata to the script to avoid re-reading DESCRIPTION
-        Rscript ${{ github.action_path }}/scripts/submit-to-cran.R \
-          "${PKG_FILE}" \
-          "." \
-          "${PKGNAME}" \
-          "${VERSION}" \
-          "${MAINTAINER_NAME}" \
-          "${MAINTAINER_EMAIL}"
-
-        # Check if the script was successful
-        if [ $? -eq 0 ]; then
-          echo "CRAN submission successful!"
-          echo "submission_status=success" >> $GITHUB_OUTPUT
-        else
-          echo "CRAN submission failed"
-          echo "submission_status=failed" >> $GITHUB_OUTPUT
-          echo "submission_reason=upload_failed" >> $GITHUB_OUTPUT
-          exit 1
-        fi
+        #Rscript ${{ github.action_path }}/scripts/submit-to-cran.R \
+        #  "${PKG_FILE}" \
+        #  "." \
+        #  "${PKGNAME}" \
+        #  "${VERSION}" \
+        #  "${MAINTAINER_NAME}" \
+        #  "${MAINTAINER_EMAIL}"
+        #
+        ## Check if the script was successful
+        #if [ $? -eq 0 ]; then
+        #  echo "CRAN submission successful!"
+        #  echo "submission_status=success" >> $GITHUB_OUTPUT
+        #else
+        #  echo "CRAN submission failed"
+        #  echo "submission_status=failed" >> $GITHUB_OUTPUT
+        #  echo "submission_reason=upload_failed" >> $GITHUB_OUTPUT
+        #  exit 1
+        #fi
 
     - name: Create issue content file
       if: inputs.create-issue == 'true'
