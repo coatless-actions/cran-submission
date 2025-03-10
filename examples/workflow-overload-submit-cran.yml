@@ -1,6 +1,13 @@
-name: Submit to CRAN
+name: Submit to CRAN (Overload)
 
 on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type "CONFIRM" to proceed with CRAN submission'
+        required: true
+        default: ''
+        type: string
   release:
     types: [prereleased]              # Only trigger on pre-releases
 
