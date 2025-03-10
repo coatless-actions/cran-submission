@@ -7,22 +7,14 @@ You can see a demo of this action in action [here][submit-cran-demo].
 
 ## Usage
 
-Add this to your repository's workflow:
+Create a new [`submit-cran.yml` workflow](examples/submit-cran.yml) in your repository's  `.github/workflow` directory containing:
 
 ```yaml
 name: Submit to CRAN
 
 on:
-  workflow_dispatch:
-    inputs:
-      confirmation:
-        description: 'Type "CONFIRM" to proceed with CRAN submission'
-        required: true
-        default: ''
-        type: string
   release:
-    types: [prereleased]   # Only trigger on pre-releases
-
+    types: [prereleased]           # Only trigger on pre-releases
 
 jobs:
   cran-submission:
@@ -42,6 +34,17 @@ jobs:
           error-on: 'warning'      # Fail on warnings
           create-issue: true       # Create issues to track submissions
 ```
+
+This workflow will trigger on pre-releases and submit the package to CRAN.
+
+## Example
+
+To begin, create a new release that is "pre-release" in your repository by selecting the "Draft a new release" button on the repository's "Releases" page ([GitHub Help: Managing releases in a repository](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository#creating-a-release)).
+
+This will trigger the workflow and start the submission process.
+
+For each submission, the action will create a new issue in the repository to track the submission status. The issue will indicate whether the submission was successful or failed and version information about the package.
+
 
 ## Inputs
 
